@@ -199,8 +199,9 @@ class _NativeGlassNavBarState extends State<NativeGlassNavBar> {
         }
 
         final bottomPadding = MediaQuery.of(context).padding.bottom;
-        // Standard tab bar height is 49. Add bottom padding for safe area.
-        final height = 49.0 + bottomPadding;
+        // Standard iOS tab bar height is 49. Android glass container uses 68.
+        final barHeight = defaultTargetPlatform == TargetPlatform.android ? 68.0 : 49.0;
+        final height = barHeight + bottomPadding;
         final params = _createParams();
 
         Widget platformView;

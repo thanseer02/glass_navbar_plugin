@@ -109,10 +109,9 @@ class NativeTabBarPlatformView(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dpToPx(56f)
         ).apply {
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.CENTER_VERTICAL
             val marginH = dpToPx(16f)
-            val marginB = dpToPx(12f)
-            setMargins(marginH, 0, marginH, marginB)
+            setMargins(marginH, 0, marginH, 0)
         }
         glassContainer.layoutParams = containerParams
         glassContainer.updateTheme(config.isDark)
