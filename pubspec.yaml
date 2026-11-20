@@ -1,6 +1,6 @@
 name: native_glass_navbar
 description: "A Flutter plugin that brings the native iOS Liquid Glass style navigation bar to your Flutter apps."
-version: 2.0.0
+version: 2.1.0
 homepage: "https://github.com/TechSupportz/native_glass_navbar"
 
 environment:
@@ -18,6 +18,8 @@ dev_dependencies:
     flutter_lints: ^5.0.0
 
 flutter:
+    shaders:
+        - shaders/glass_lens.frag
     plugin:
         platforms:
             ios:

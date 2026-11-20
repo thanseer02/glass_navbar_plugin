@@ -1,291 +1,219 @@
-import 'dart:ui';
+// ignore_for_file: deprecated_member_use
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:native_glass_navbar/native_glass_navbar.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const LiquidGlassApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class LiquidGlassApp extends StatelessWidget {
+  const LiquidGlassApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Glass Navbar Demo',
+      title: 'Liquid Glass Tab Bar Demo',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.light,
-        ),
+      themeMode: ThemeMode.dark,
+      darkTheme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF121214),
       ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const HomeScreen(),
+      home: const DemoHomeScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class DemoHomeScreen extends StatefulWidget {
+  const DemoHomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<DemoHomeScreen> createState() => _DemoHomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _DemoHomeScreenState extends State<DemoHomeScreen> {
   int _currentIndex = 0;
+  bool _forceFallback = false;
 
-  final List<Widget> _pages = const [
-    _PageWidget(
-      title: 'Home',
-      icon: Icons.home_rounded,
-      color: Colors.deepPurple,
+  final List<LiquidGlassTabItem> _tabs = const [
+    LiquidGlassTabItem(
+      icon: Icons.alarm,
+      label: 'Alarm',
     ),
-    _PageWidget(
-      title: 'Explore',
-      icon: Icons.search_rounded,
-      color: Colors.blueAccent,
+    LiquidGlassTabItem(
+      icon: Icons.language,
+      label: 'World Clock',
     ),
-    _PageWidget(
-      title: 'Favorites',
-      icon: Icons.favorite_rounded,
-      color: Colors.pinkAccent,
+    LiquidGlassTabItem(
+      icon: Icons.timer,
+      label: 'Stopwatch',
     ),
-    _PageWidget(
-      title: 'Settings',
-      icon: Icons.settings_rounded,
-      color: Colors.teal,
+    LiquidGlassTabItem(
+      icon: Icons.hourglass_bottom,
+      label: 'Timer',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        extendBody:
-            true, // Allows background content to display behind the glass bar
-        appBar: AppBar(title: const Text('Glass Navbar'), centerTitle: true),
-        body: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: _pages[_currentIndex],
-        ),
-        bottomNavigationBar: NativeGlassNavBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-          actionButton: TabBarActionButton(
-            symbol: 'plus',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Action Button Pressed!'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-          ),
-          fallback: _AndroidGlassNavBar(
-            selectedIndex: _currentIndex,
-            onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-          ),
-          tabs: const [
-            NativeGlassNavBarItem(
-              label: 'Home',
-              symbol: 'house',
-              selectedSymbol: 'house.fill',
-            ),
-            NativeGlassNavBarItem(label: 'Explore', symbol: 'magnifyingglass'),
-            NativeGlassNavBarItem(
-              label: 'Favorites',
-              symbol: 'heart',
-              selectedSymbol: 'heart.fill',
-              badgeValue: '3',
-            ),
-            NativeGlassNavBarItem(
-              label: 'Settings',
-              symbol: 'gear',
-              selectedSymbol: 'gearshape.fill',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    final activeTab = _tabs[_currentIndex];
 
-class _AndroidGlassNavBar extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onTap;
-
-  const _AndroidGlassNavBar({required this.selectedIndex, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.5)
-                  : Colors.white.withValues(alpha: 0.75),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.15)
-                    : Colors.black.withValues(alpha: 0.08),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _navItem(0, Icons.home_rounded, 'Home'),
-                _navItem(1, Icons.search_rounded, 'Explore'),
-                _navItem(2, Icons.favorite_rounded, 'Favorites', badge: '3'),
-                _navItem(3, Icons.settings_rounded, 'Settings'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _navItem(int index, IconData icon, String label, {String? badge}) {
-    final isSelected = selectedIndex == index;
-    return GestureDetector(
-      onTap: () => onTap(index),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.deepPurple.withValues(alpha: 0.18)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  size: 22,
-                  color: isSelected ? Colors.deepPurple : Colors.grey,
-                ),
-                if (isSelected) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.deepPurple,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            if (badge != null && !isSelected)
-              Positioned(
-                top: -4,
-                right: -6,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.redAccent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    badge,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PageWidget extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-
-  const _PageWidget({
-    required this.title,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      key: ValueKey(title),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      extendBody: true,
+      body: Stack(
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.15),
+          // Background rich gradient & cards to showcase glass refraction
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0.4, -0.3),
+                  radius: 1.2,
+                  colors: [
+                    Color(0xFF2E1C38),
+                    Color(0xFF16161E),
+                    Color(0xFF0F0F12),
+                  ],
+                ),
+              ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(24, 70, 24, 140),
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        activeTab.label,
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _forceFallback ? Icons.blur_off : Icons.blur_on,
+                          color: Colors.white70,
+                        ),
+                        tooltip: _forceFallback ? 'Enable Shader' : 'Force Fallback',
+                        onPressed: () {
+                          setState(() {
+                            _forceFallback = !_forceFallback;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Mode: ${_forceFallback ? "Fallback (no shader)" : "Pure-Flutter GLSL FragmentProgram"}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
+                  const SizedBox(height: 36),
+
+                  // Center Active Display Card
+                  Center(
+                    child: Container(
+                      width: 220,
+                      height: 220,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFFFF5A5F).withValues(alpha: 0.25),
+                            const Color(0xFFFF9472).withValues(alpha: 0.1),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: const Color(0xFFFF5A5F).withValues(alpha: 0.35),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            activeTab.icon,
+                            size: 68,
+                            color: const Color(0xFFFF5A5F),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            activeTab.label,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 48),
+
+                  // Sample content items behind the navigation bar
+                  for (int i = 1; i <= 4; i++)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Item #$i for ${activeTab.label}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right,
+                            color: Colors.white38,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-            child: Icon(icon, size: 56, color: color),
           ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Running on Android (ZD2225QQDC)',
-            style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: Colors.grey),
+
+          // Liquid Glass Tab Bar at the bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: LiquidGlassTabBar(
+              items: _tabs,
+              currentIndex: _currentIndex,
+              accentColor: const Color(0xFFFF5A5F),
+              inactiveColor: const Color(0xFFBDBDBD),
+              barColor: const Color(0xCC3A3A3A),
+              indicatorColor: const Color(0xFF1C1C1C),
+              height: 64,
+              lensMagnification: 1.3,
+              lensRefraction: 0.6,
+              chromaticAberration: 0.08,
+              forceFallback: _forceFallback,
+              showHomeIndicator: true,
+              onChanged: (newIndex) {
+                setState(() {
+                  _currentIndex = newIndex;
+                });
+              },
+            ),
           ),
         ],
       ),

@@ -1,7 +1,3 @@
-/// A helper library for checking support for the native glass effect.
-library liquid_glass_helper;
-
-import 'dart:io';
 import 'package:flutter/services.dart';
 
 /// A helper class to check if the device supports the native glass effect.
@@ -15,12 +11,11 @@ class LiquidGlassHelper {
   /// Returns `true` if the platform is iOS or Android and the native check returns true.
   /// Returns `false` otherwise.
   static Future<bool> isLiquidGlassSupported() async {
-    if (!Platform.isIOS && !Platform.isAndroid) return false;
     try {
-      final bool supported = await _channel.invokeMethod(
+      final bool? supported = await _channel.invokeMethod<bool>(
         'isLiquidGlassSupported',
       );
-      return supported;
+      return supported ?? false;
     } on MissingPluginException {
       return false;
     } on PlatformException {
