@@ -7,6 +7,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:native_glass_navbar/liquid_glass_helper.dart';
@@ -231,28 +232,49 @@ class _NativeGlassNavBarState extends State<NativeGlassNavBar> {
             },
           );
         } else if (defaultTargetPlatform == TargetPlatform.android) {
-          platformView = AndroidView(
+          platformView = PlatformViewLink(
             viewType: 'NativeTabBar',
-            creationParams: params.toMap(),
-            creationParamsCodec: const StandardMessageCodec(),
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+            surfaceFactory: (context, controller) {
+              return AndroidViewSurface(
+                controller: controller as AndroidViewController,
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+                },
+                hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+              );
             },
-            onPlatformViewCreated: (id) {
-              _channel = MethodChannel('NativeTabBar_$id');
-              _lastSentParams = params;
-              _channel!.setMethodCallHandler((call) async {
-                if (call.method == 'valueChanged') {
-                  final index = call.arguments['index'] as int;
-                  _lastSentParams = (_lastSentParams ?? _createParams())
-                      .copyWith(selectedIndex: index);
-                  widget.onTap(index);
-                }
+            onCreatePlatformView: (paramsLink) {
+              final controller = PlatformViewsService.initSurfaceAndroidView(
+                id: paramsLink.id,
+                viewType: 'NativeTabBar',
+                layoutDirection: TextDirection.ltr,
+                creationParams: params.toMap(),
+                creationParamsCodec: const StandardMessageCodec(),
+                onFocus: () {
+                  paramsLink.onFocusChanged(true);
+                },
+              );
 
-                if (call.method == 'actionButtonPressed') {
-                  widget.actionButton?.onTap();
-                }
+              controller.addOnPlatformViewCreatedListener((id) {
+                paramsLink.onPlatformViewCreated(id);
+                _channel = MethodChannel('NativeTabBar_$id');
+                _lastSentParams = params;
+                _channel!.setMethodCallHandler((call) async {
+                  if (call.method == 'valueChanged') {
+                    final index = call.arguments['index'] as int;
+                    _lastSentParams = (_lastSentParams ?? _createParams())
+                        .copyWith(selectedIndex: index);
+                    widget.onTap(index);
+                  }
+
+                  if (call.method == 'actionButtonPressed') {
+                    widget.actionButton?.onTap();
+                  }
+                });
               });
+
+              controller.create();
+              return controller;
             },
           );
         } else {

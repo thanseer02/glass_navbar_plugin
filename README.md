@@ -129,6 +129,17 @@ NativeGlassNavBar(
 )
 ```
 
+## Android Support & Setup
+
+Starting in version 2.1.0, `native_glass_navbar` supports native Android via custom hardware accelerated platform views:
+
+- **Android 13+ (API 33+)**: Full native glass effect utilizing AGSL `RuntimeShader` with edge curvature refraction, specular light highlight, and touch ripple distortion chained with hardware `RenderEffect.createBlurEffect`.
+- **Android 12 (API 31-32)**: Hardware-accelerated backdrop blur using `RenderEffect.createBlurEffect` combined with perimeter gradient stroke borders and specular highlight.
+- **Android 7.0 - 11 (API 24-30)**: Graceful fallback rendering with layered translucent glass tint, gradient borders, and elevation shadow with zero crashes.
+- **Minimum SDK**: `minSdkVersion 24`, `compileSdkVersion 35`.
+
+No additional native setup is needed for Android; simply configure your Flutter app with `extendBody: true` on your `Scaffold` so background gradients, images, or scroll views show beneath the translucent glass navigation bar.
+
 ## API Reference
 
 ### NativeGlassNavBar
