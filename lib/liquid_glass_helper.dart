@@ -12,10 +12,10 @@ class LiquidGlassHelper {
 
   /// Checks if the current device supports the liquid glass effect.
   ///
-  /// Returns `true` if the platform is iOS and the native check returns true.
+  /// Returns `true` if the platform is iOS or Android and the native check returns true.
   /// Returns `false` otherwise.
   static Future<bool> isLiquidGlassSupported() async {
-    if (!Platform.isIOS) return false;
+    if (!Platform.isIOS && !Platform.isAndroid) return false;
     try {
       final bool supported = await _channel.invokeMethod(
         'isLiquidGlassSupported',

@@ -119,7 +119,8 @@ class _NativeGlassNavBarState extends State<NativeGlassNavBar> {
   }
 
   Future<bool> checkLiquidGlassSupport() async {
-    if (defaultTargetPlatform != TargetPlatform.iOS) {
+    if (defaultTargetPlatform != TargetPlatform.iOS &&
+        defaultTargetPlatform != TargetPlatform.android) {
       return false;
     }
 
@@ -202,9 +203,9 @@ class _NativeGlassNavBarState extends State<NativeGlassNavBar> {
         final height = 49.0 + bottomPadding;
         final params = _createParams();
 
-        return SizedBox(
-          height: height,
-          child: UiKitView(
+        Widget platformView;
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
+          platformView = UiKitView(
             viewType: 'NativeTabBar',
             creationParams: params.toMap(),
             creationParamsCodec: const StandardMessageCodec(),
@@ -227,7 +228,39 @@ class _NativeGlassNavBarState extends State<NativeGlassNavBar> {
                 }
               });
             },
-          ),
+          );
+        } else if (defaultTargetPlatform == TargetPlatform.android) {
+          platformView = AndroidView(
+            viewType: 'NativeTabBar',
+            creationParams: params.toMap(),
+            creationParamsCodec: const StandardMessageCodec(),
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+              Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+            },
+            onPlatformViewCreated: (id) {
+              _channel = MethodChannel('NativeTabBar_$id');
+              _lastSentParams = params;
+              _channel!.setMethodCallHandler((call) async {
+                if (call.method == 'valueChanged') {
+                  final index = call.arguments['index'] as int;
+                  _lastSentParams = (_lastSentParams ?? _createParams())
+                      .copyWith(selectedIndex: index);
+                  widget.onTap(index);
+                }
+
+                if (call.method == 'actionButtonPressed') {
+                  widget.actionButton?.onTap();
+                }
+              });
+            },
+          );
+        } else {
+          return widget.fallback ?? const SizedBox.shrink();
+        }
+
+        return SizedBox(
+          height: height,
+          child: platformView,
         );
       },
     );

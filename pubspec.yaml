@@ -22,3 +22,6 @@ flutter:
         platforms:
             ios:
                 pluginClass: NativeLiquidTabBarPlugin
+            android:
+                package: com.tnitish.native_glass_navbar
+                pluginClass: NativeLiquidTabBarPlugin
