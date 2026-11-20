@@ -48,13 +48,14 @@ class GlassContainerView @JvmOverloads constructor(
 
     companion object {
         private const val AGSL_GLASS_SHADER = """
+            uniform shader compositedContent;
             uniform float2 resolution;
             uniform float isDark;
             uniform float2 touchPos;
             uniform float touchIntensity;
             
             half4 main(float2 fragCoord) {
-                float2 uv = fragCoord / resolution;
+                half4 content = compositedContent.eval(fragCoord);
                 
                 // Base liquid glass transparency tint
                 half4 baseColor = (isDark > 0.5) 
@@ -77,7 +78,7 @@ class GlassContainerView @JvmOverloads constructor(
                 float touchDist = distance(fragCoord, touchPos);
                 float touchWave = sin(touchDist * 0.08) * exp(-touchDist * 0.015) * touchIntensity * 0.15;
                 
-                half3 color = baseColor.rgb + half3(topHighlight + curvature * 0.08 + touchWave);
+                half3 color = mix(content.rgb, baseColor.rgb, 0.7) + half3(topHighlight + curvature * 0.08 + touchWave);
                 float alpha = clamp(baseColor.a + curvature * 0.12, 0.0, 1.0);
                 
                 return half4(color * alpha, alpha);
@@ -102,15 +103,16 @@ class GlassContainerView @JvmOverloads constructor(
                     Shader.TileMode.CLAMP
                 )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    runtimeShader = RuntimeShader(AGSL_GLASS_SHADER)
-                    val shaderEffect = RenderEffect.createRuntimeShaderEffect(runtimeShader!!, "baseShader")
+                    val shader = RuntimeShader(AGSL_GLASS_SHADER)
+                    runtimeShader = shader
+                    val shaderEffect = RenderEffect.createRuntimeShaderEffect(shader, "compositedContent")
                     val combinedEffect = RenderEffect.createChainEffect(shaderEffect, blurEffect)
                     setRenderEffect(combinedEffect)
                 } else {
                     setRenderEffect(blurEffect)
                 }
             } catch (t: Throwable) {
-                // Fallback to custom canvas drawing
+                // Graceful fallback to custom canvas drawing
             }
         }
     }
