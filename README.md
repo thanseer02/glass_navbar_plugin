@@ -1,164 +1,121 @@
-# native_glass_navbar
+# liquid_glass_tab_bar (native_glass_navbar)
 
-A Flutter plugin that brings the native iOS Liquid Glass style navigation bar to your Flutter apps.
+An iOS-26-style **"Liquid Glass"** bottom tab bar and clear lens effect built with custom Flutter render objects, **GLSL fragment shaders (`ui.FragmentProgram`)**, and physics-based gesture dynamics.
 
-This package uses [platform views and method channels](https://docs.flutter.dev/platform-integration/ios/platform-views) to render the actual native iOS `UITabBar`. This means no more of that uncanny valley effect that you often get with custom Flutter implementations.
+Renders identically on **Android (minSdk 21+)** and **iOS** with zero platform-view overhead, real convex lens refraction, magnification, chromatic aberration, touch dot tracking, and spring liquid stretch.
 
-The Dart implementation uses Flutter's official standalone `material_ui`
-package so Material and Cupertino apps share the same decoupled theme state.
+---
 
-## **Demos** <br />
-![output](https://github.com/user-attachments/assets/d7691c1b-5eef-451d-b18f-4d118ca3e8f2)
-![output-items-bg](https://github.com/user-attachments/assets/5bbc0358-0e85-4604-89db-96eb68806053)
+## 🌟 Key Features
 
-## Features
+- **Pure-Flutter GLSL Fragment Shader**: Convex lens refraction, SDF capsule geometry, R/G/B chromatic aberration at edges, specular rim highlight, and inner glow.
+- **Content Magnification & Tinting**: Overlapping icons and labels are magnified (`~1.2–1.4x`) and dynamically tinted with the accent color inside the lens capsule.
+- **Interactive Lens & Touch Dot**: Morph from a dark idle pill into an interactive clear glass lens upon touch down, with a `~28dp` touch dot that smoothly tracks the finger.
+- **Physics-Based Spring Dynamics**: Horizontal drag with squash and stretch in the motion direction, relaxing on stop and springing smoothly to the nearest tab with `HapticFeedback.selectionClick`.
+- **Graceful Fallback Mode**: Automatic fallback to a high-performance vector/canvas visual effect for low-end devices or environments without fragment shader support.
+- **Standalone `LiquidGlassLens`**: Reusable standalone lens widget for refracting arbitrary Flutter widgets (cards, images, buttons).
+- **Backward Compatibility**: Fully preserves legacy `NativeGlassNavBar` and `NativeGlassNavBarItem` APIs.
 
-- **Native look and feel**: Probably because it is native 😉.
-- **Dark Mode & Theming**: Automatically matches system themes and uses your app's primary color.
-- **Action Button**: Add a floating action button for your main app actions.
-- **Tab Badges**: Show and update native badges on individual tabs.
-- **SF Symbols**: Use any [SF Symbol](https://developer.apple.com/sf-symbols/) for icons.
-- **Fallback Support**: Optionally define a fallback widget for Android or older iOS versions.
+---
 
-## Installation
+## 🚀 Getting Started
 
-Add this to your package's `pubspec.yaml` file:
+### 1. Installation
+
+In your app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-    native_glass_navbar: ^2.0.0
+  native_glass_navbar: ^2.1.0
 ```
 
-## Requirements
+Ensure your shader is enabled in Flutter (included automatically when using this package):
 
-- Build iOS apps with Xcode 27 or later.
-- Use Flutter 3.44 or later and Dart 3.12 or later.
-- The example uses Flutter 3.47.4, pinned with FVM, and Swift Package Manager.
+```yaml
+flutter:
+  shaders:
+    - packages/native_glass_navbar/shaders/glass_lens.frag
+```
 
-## Usage
+---
 
-Import the package:
+## 📖 Usage
+
+### Tab Bar Example
 
 ```dart
+import 'package:flutter/material.dart';
 import 'package:native_glass_navbar/native_glass_navbar.dart';
-```
 
-### Basic Implementation
-
-```dart
-NativeGlassNavBar(
+LiquidGlassTabBar(
   currentIndex: _currentIndex,
-  onTap: (index) {
-    setState(() {
-      _currentIndex = index;
-    });
+  onChanged: (index) {
+    setState(() => _currentIndex = index);
   },
-  tabs: const [
-    NativeGlassNavBarItem(
-      label: 'Home',
-      symbol: 'house',
-      selectedSymbol: 'house.fill',
-    ),
-    NativeGlassNavBarItem(label: 'Search', symbol: 'magnifyingglass'),
-    NativeGlassNavBarItem(label: 'Settings', symbol: 'gear'),
+  accentColor: const Color(0xFFFF5A5F),
+  inactiveColor: const Color(0xFFBDBDBD),
+  barColor: const Color(0xCC3A3A3A),
+  indicatorColor: const Color(0xFF1C1C1C),
+  height: 64,
+  lensMagnification: 1.3,
+  lensRefraction: 0.6,
+  chromaticAberration: 0.08,
+  showHomeIndicator: true,
+  items: const [
+    LiquidGlassTabItem(icon: Icons.alarm, label: 'Alarm'),
+    LiquidGlassTabItem(icon: Icons.language, label: 'World Clock'),
+    LiquidGlassTabItem(icon: Icons.timer, label: 'Stopwatch'),
+    LiquidGlassTabItem(icon: Icons.hourglass_bottom, label: 'Timer'),
   ],
 )
 ```
 
-### With Action Button
+---
 
-You can add a action button (e.g., for a "New Post" action). Note that when an action button is present, the maximum number of tabs is 4.
+### Standalone Lens Widget
 
-_yes I'm aware this is not the recommended design pattern but I like it soooooooo..._
+Refract any custom widget on the screen:
 
 ```dart
-NativeGlassNavBar(
-  currentIndex: _currentIndex,
-  onTap: (index) => setState(() => _currentIndex = index),
-  actionButton: TabBarActionButton(
-    symbol: 'plus',
-    onTap: () {
-      print('Action button tapped!');
-    },
-  ),
-  tabs: const [
-    NativeGlassNavBarItem(label: 'Home', symbol: 'house'),
-    NativeGlassNavBarItem(label: 'Profile', symbol: 'person'),
-  ],
+LiquidGlassLens(
+  lensCenter: Offset(100, 30),
+  lensHalfSize: Size(50, 24),
+  cornerRadius: 22,
+  magnification: 1.3,
+  refraction: 0.6,
+  chromaticAberration: 0.08,
+  pressProgress: 1.0,
+  accentColor: Color(0xFFFF5A5F),
+  child: MyComplexCardWidget(),
 )
 ```
 
-### With Tab Badges
+---
 
-Set `badgeValue` on a tab item. Rebuild the bar with a new value to update the badge; use `null` to hide it.
+## ⚙️ Parameters & Specifications
 
-```dart
-NativeGlassNavBarItem(
-  label: 'Inbox',
-  symbol: 'tray.fill',
-  badgeValue: unreadCount == 0 ? null : '$unreadCount',
-)
-```
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `items` | `List<LiquidGlassTabItem>` | *Required* | List of 2 to 5 tab items (icon, label, badge). |
+| `currentIndex` | `int` | *Required* | Currently active tab index. |
+| `onChanged` | `ValueChanged<int>` | *Required* | Callback triggered upon tab release/tap. |
+| `accentColor` | `Color` | `Color(0xFFFF5A5F)` | Color of selected icon, label, and lens tint. |
+| `inactiveColor` | `Color` | `Color(0xFFBDBDBD)` | Color of unselected tab items. |
+| `barColor` | `Color` | `Color(0xCC202024)` | Translucent dark-grey background of floating bar. |
+| `indicatorColor` | `Color` | `Color(0xFF141416)` | Fill color of the dark idle pill behind active tab. |
+| `height` | `double` | `64.0` | Bar height. |
+| `lensMagnification` | `double` | `1.3` | Zoom factor inside the lens capsule. |
+| `lensRefraction` | `double` | `0.6` | Lens distortion strength near capsule rims. |
+| `chromaticAberration`| `double` | `0.4` | Color fringing divergence (blue/orange rims). |
+| `showHomeIndicator`| `bool` | `false` | Whether to draw the centered iOS home indicator. |
+| `forceFallback` | `bool` | `false` | Force non-shader fallback mode for testing. |
 
-### Theme Integration
+---
 
-Version 2 uses Flutter's standalone `material_ui` theme lookup. It automatically
-follows both `material_ui` `MaterialApp` themes and `cupertino_ui` `CupertinoApp`
-themes, including live light/dark changes. No compatibility bridge or explicit
-brightness parameter is required.
+## 🛠️ Architecture & Under the Hood
 
-Apps that still use Flutter's legacy `package:flutter/material.dart` or
-`package:flutter/cupertino.dart` should remain on `native_glass_navbar` 1.x
-until they migrate to the standalone UI packages.
-
-### Handling Unsupported Platforms
-
-Since this plugin relies on native iOS APIs, it will not render the glass effect on Android or older iOS versions. You can provide a `fallback` widget (like a standard `BottomNavigationBar`) for these cases.
-
-```dart
-NativeGlassNavBar(
-  // ... other properties
-  fallback: BottomNavigationBar(
-    currentIndex: _currentIndex,
-    onTap: (index) => setState(() => _currentIndex = index),
-    items: const [
-      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-      BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-    ],
-  ),
-)
-```
-
-## Android Support & Setup
-
-Starting in version 2.1.0, `native_glass_navbar` supports native Android via custom hardware accelerated platform views:
-
-- **Android 13+ (API 33+)**: Full native glass effect utilizing AGSL `RuntimeShader` with edge curvature refraction, specular light highlight, and touch ripple distortion chained with hardware `RenderEffect.createBlurEffect`.
-- **Android 12 (API 31-32)**: Hardware-accelerated backdrop blur using `RenderEffect.createBlurEffect` combined with perimeter gradient stroke borders and specular highlight.
-- **Android 7.0 - 11 (API 24-30)**: Graceful fallback rendering with layered translucent glass tint, gradient borders, and elevation shadow with zero crashes.
-- **Minimum SDK**: `minSdkVersion 24`, `compileSdkVersion 35`.
-
-No additional native setup is needed for Android; simply configure your Flutter app with `extendBody: true` on your `Scaffold` so background gradients, images, or scroll views show beneath the translucent glass navigation bar.
-
-## API Reference
-
-### NativeGlassNavBar
-
-| Parameter      | Type                          | Description                                                                      |
-| -------------- | ----------------------------- | -------------------------------------------------------------------------------- |
-| `tabs`         | `List<NativeGlassNavBarItem>` | List of tabs to display. Max 5 (or 4 with action button).                        |
-| `currentIndex` | `int`                         | The index of the currently selected tab.                                         |
-| `onTap`        | `ValueChanged<int>`           | Callback when a tab is selected.                                                 |
-| `actionButton` | `TabBarActionButton?`         | Optional action button.                                                          |
-| `tintColor`    | `Color?`                      | Color of the selected item. Defaults to `Theme.of(context).colorScheme.primary`. |
-| `fallback`     | `Widget?`                     | Widget to display if the platform is not supported.                              |
-
-### NativeGlassNavBarItem
-
-| Parameter        | Type      | Description                                                                                          |
-| ---------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| `label`          | `String`  | Text label for the tab.                                                                              |
-| `symbol`         | `String`  | [SF Symbol](https://developer.apple.com/sf-symbols/) name for the normal icon (e.g., 'house').       |
-| `selectedSymbol` | `String?` | Optional SF Symbol for the selected icon (e.g., 'house.fill'). Defaults to `symbol`.                 |
-| `badgeValue`     | `String?` | Native badge text. `null` hides the badge.                                                          |
-# glass_navbar_plugin
+1. **RepaintBoundary Texture Sampling**: Tab icons and labels are rendered inside an isolated `RepaintBoundary` and rasterized into a GPU image texture.
+2. **GLSL Fragment Shader**: `glass_lens.frag` computes the Signed Distance Function (SDF) of the rounded capsule:
+   $$\text{dist} = \text{sdRoundedBox}(p - \text{center}, \text{halfSize}, r)$$
+3. **Refraction Field & Dispersion**: The gradient of the SDF drives an optical displacement vector that reaches peak distortion at the edges and vanishes at the center. Separate offsets are applied to R, G, and B color channels to generate physical chromatic dispersion.
+4. **Physics Simulations**: Fluid horizontal transitions leverage `SpringSimulation(SpringDescription(mass: 1.0, stiffness: 220.0, damping: 20.0))` with velocity-based stretch and squashing.

@@ -2,19 +2,21 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:native_glass_navbar/src/liquid_glass_item.dart';
 
-// Shader cache singleton
-ui.FragmentProgram? _cachedGlassProgram;
-bool _hasAttemptedShaderLoad = false;
+import 'liquid_glass_item.dart';
 
-/// Pure-Flutter reproduction of the iOS "Liquid Glass" bottom tab bar.
+/// Pure-Flutter iOS-style Liquid Glass bottom tab bar.
 ///
-/// Works identically on both Android and iOS without PlatformView overhead,
-/// rendering real convex lens refraction, magnification, chromatic aberration,
-/// liquid stretching, spring dynamics, and touch tracking.
+/// Features a strict two-layer dual-raster rendering architecture:
+/// - Layer A: Inactive (grey) icons & labels.
+/// - Layer B: Active (accent/red) icons & labels.
+///
+/// Under the convex lens, Layer A is completely masked out with an anti-aliased SDF
+/// boundary, and Layer B is magnified, refracted, and chromatically dispersed.
+/// Zero ghosting, zero double glyphs, and zero alpha composite overlap.
 class LiquidGlassTabBar extends StatefulWidget {
   /// Creates a [LiquidGlassTabBar].
   const LiquidGlassTabBar({
@@ -30,6 +32,9 @@ class LiquidGlassTabBar extends StatefulWidget {
     this.lensMagnification = 1.3,
     this.lensRefraction = 0.6,
     this.chromaticAberration = 0.4,
+    this.animationDuration = const Duration(milliseconds: 380),
+    this.springStiffness = 110.0,
+    this.springDamping = 16.0,
     this.showHomeIndicator = false,
     this.forceFallback = false,
   }) : assert(items.length >= 2, 'LiquidGlassTabBar requires at least 2 items.');
@@ -67,6 +72,15 @@ class LiquidGlassTabBar extends StatefulWidget {
   /// Edge chromatic aberration intensity.
   final double chromaticAberration;
 
+  /// Duration for press and transition animations.
+  final Duration animationDuration;
+
+  /// Spring simulation stiffness for tab snapping (lower = slower, smoother movement).
+  final double springStiffness;
+
+  /// Spring simulation damping for tab snapping (higher = less oscillation).
+  final double springDamping;
+
   /// Whether to render a centered iOS home indicator bar below.
   final bool showHomeIndicator;
 
@@ -79,7 +93,8 @@ class LiquidGlassTabBar extends StatefulWidget {
 
 class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     with TickerProviderStateMixin {
-  final GlobalKey _tabContentKey = GlobalKey();
+  final GlobalKey _inactiveContentKey = GlobalKey();
+  final GlobalKey _activeContentKey = GlobalKey();
 
   late AnimationController _pressController;
   late AnimationController _positionController;
@@ -93,7 +108,12 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   Offset _touchDotPos = Offset.zero;
   bool _isDragging = false;
   int _dragHoverIndex = 0;
-  ui.Image? _capturedContentImage;
+
+  static ui.FragmentProgram? _cachedGlassProgram;
+  bool _hasAttemptedShaderLoad = false;
+
+  ui.Image? _capturedInactiveImage;
+  ui.Image? _capturedActiveImage;
   bool _isCapturing = false;
 
   @override
@@ -102,7 +122,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
 
     _pressController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: widget.animationDuration,
     );
 
     _positionController = AnimationController.unbounded(vsync: this)
@@ -116,7 +136,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _snapToTab(widget.currentIndex, animated: false);
-        _captureContentImage();
+        _captureContentImages();
       }
     });
   }
@@ -153,8 +173,10 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     if (oldWidget.currentIndex != widget.currentIndex && !_isDragging) {
       _snapToTab(widget.currentIndex, animated: true);
     }
-    if (oldWidget.items.length != widget.items.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _captureContentImage());
+    if (oldWidget.items.length != widget.items.length ||
+        oldWidget.accentColor != widget.accentColor ||
+        oldWidget.inactiveColor != widget.inactiveColor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _captureContentImages());
     }
   }
 
@@ -163,14 +185,19 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     _pressController.dispose();
     _positionController.dispose();
     _stretchController.dispose();
-    _capturedContentImage?.dispose();
+    _capturedInactiveImage?.dispose();
+    _capturedActiveImage?.dispose();
     super.dispose();
   }
 
   void _onPositionTick() {
-    setState(() {
+    if (mounted) {
       _lensCenterX = _positionController.value;
-    });
+      // Schedule rebuild on next frame if called during layout
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _onStretchTick() {
@@ -190,11 +217,32 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
       return;
     }
 
-    final spring = const SpringDescription(mass: 1.0, stiffness: 220.0, damping: 20.0);
-    _positionSimulation = SpringSimulation(spring, _lensCenterX, targetX, 0.0);
+    final distance = (targetX - _lensCenterX).abs();
+    final direction = targetX > _lensCenterX ? 1.0 : -1.0;
+
+    if (distance > 10.0) {
+      _stretchFactor = 1.0 + (distance / (slotW * widget.items.length) * 0.45).clamp(0.0, 0.4);
+      _touchDotPos = Offset(targetX, widget.height / 2);
+    }
+
+    final spring = SpringDescription(
+      mass: 1.0,
+      stiffness: widget.springStiffness,
+      damping: widget.springDamping,
+    );
+    _positionSimulation = SpringSimulation(
+      spring,
+      _lensCenterX,
+      targetX,
+      direction * (distance > 10.0 ? 30.0 : 0.0),
+    );
     _positionController.animateWith(_positionSimulation!);
 
-    final stretchSpring = const SpringDescription(mass: 1.0, stiffness: 300.0, damping: 18.0);
+    final stretchSpring = SpringDescription(
+      mass: 1.0,
+      stiffness: widget.springStiffness * 1.3,
+      damping: widget.springDamping,
+    );
     _stretchSimulation = SpringSimulation(stretchSpring, _stretchFactor, 1.0, 0.0);
     _stretchController.animateWith(_stretchSimulation!);
   }
@@ -205,24 +253,32 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     return totalW / widget.items.length;
   }
 
-  Future<void> _captureContentImage() async {
+  Future<void> _captureContentImages() async {
     if (_isCapturing || !mounted) return;
     _isCapturing = true;
 
     try {
-      final boundary = _tabContentKey.currentContext?.findRenderObject()
+      final inactiveBoundary = _inactiveContentKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
-      if (boundary != null && boundary.hasSize) {
-        final image = await boundary.toImage(pixelRatio: 2.0);
+      final activeBoundary = _activeContentKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+
+      if (inactiveBoundary != null && inactiveBoundary.hasSize &&
+          activeBoundary != null && activeBoundary.hasSize) {
+        final imgInactive = await inactiveBoundary.toImage(pixelRatio: 2.0);
+        final imgActive = await activeBoundary.toImage(pixelRatio: 2.0);
+
         if (mounted) {
-          _capturedContentImage?.dispose();
+          _capturedInactiveImage?.dispose();
+          _capturedActiveImage?.dispose();
           setState(() {
-            _capturedContentImage = image;
+            _capturedInactiveImage = imgInactive;
+            _capturedActiveImage = imgActive;
           });
         }
       }
     } catch (_) {
-      // Ignore transient capture
+      // Ignore transient capture error during layout
     } finally {
       _isCapturing = false;
     }
@@ -243,7 +299,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     _positionController.value = _lensCenterX;
 
     HapticFeedback.selectionClick();
-    _captureContentImage();
+    _captureContentImages();
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
@@ -255,11 +311,11 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     final clampedX = rawX.clamp(minX, maxX);
     final deltaX = details.delta.dx;
 
-    final stretchVelocity = (deltaX.abs() / 15.0).clamp(0.0, 0.35);
+    final stretchVelocity = (deltaX.abs() / 25.0).clamp(0.0, 0.25);
     _stretchFactor = 1.0 + stretchVelocity;
 
-    _lensCenterX = clampedX;
-    _positionController.value = clampedX;
+    _lensCenterX = _lensCenterX + (clampedX - _lensCenterX) * 0.45;
+    _positionController.value = _lensCenterX;
     _touchDotPos = details.localPosition;
 
     final hoverIdx = (clampedX / slotW).floor().clamp(0, widget.items.length - 1);
@@ -292,6 +348,70 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     _snapToTab(widget.currentIndex, animated: true);
   }
 
+  /// Builds a tab row where each slot has an independent color.
+  /// [forCapture] true = all tabs same [color] (for shader texture); false = per-slot coloring.
+  Widget _buildTabRow({
+    required Color color,
+    required bool isActiveLayer,
+    int selectedIndex = -1,
+    Color? selectedColor,
+  }) {
+    return Row(
+      children: List.generate(widget.items.length, (index) {
+        final item = widget.items[index];
+        final isSelected = selectedIndex == index;
+        final slotColor = (isSelected && selectedColor != null) ? selectedColor : color;
+        final iconData = (isSelected && item.selectedIcon != null)
+            ? item.selectedIcon!
+            : item.icon;
+
+        return Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(iconData, color: slotColor, size: 24),
+                  if (item.badgeValue != null && item.badgeValue!.isNotEmpty)
+                    Positioned(
+                      right: -8,
+                      top: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFFF3B30),
+                        ),
+                        child: Text(
+                          item.badgeValue!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: slotColor,
+                  fontSize: 11,
+                  fontWeight: (isSelected || isActiveLayer) ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
@@ -317,6 +437,10 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                     final lensH = widget.height * 0.82;
                     final lensHalfSize = Size(lensW / 2, lensH / 2);
 
+                    final currentPillX = _lensCenterX == 0.0
+                        ? (widget.currentIndex + 0.5) * slotW
+                        : _lensCenterX;
+
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onPanDown: _handlePanDown,
@@ -327,6 +451,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                         clipBehavior: Clip.none,
                         alignment: Alignment.center,
                         children: [
+                          // 1. Floating Bar Background
                           Positioned.fill(
                             child: Container(
                               decoration: BoxDecoration(
@@ -346,6 +471,8 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                               ),
                             ),
                           ),
+
+                          // 2. Dark Pill Indicator (idle state behind active tab)
                           AnimatedBuilder(
                             animation: Listenable.merge([
                               _pressController,
@@ -358,7 +485,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                               final pillOpacity = (1.0 - press).clamp(0.0, 1.0);
 
                               return Positioned(
-                                left: _lensCenterX - (lensW * scale) / 2,
+                                left: currentPillX - (lensW * scale) / 2,
                                 top: (widget.height - (lensH * scale)) / 2,
                                 width: lensW * scale,
                                 height: lensH * scale,
@@ -383,28 +510,42 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                               );
                             },
                           ),
+
+                          // 3. VISIBLE tab row — always rendered, always visible.
+                          //    Selected tab = accent color; all others = inactive grey.
+                          //    The lens overlay will strictly replace content inside it on press.
                           RepaintBoundary(
-                            key: _tabContentKey,
-                            child: Row(
-                              children: List.generate(widget.items.length, (index) {
-                                final item = widget.items[index];
-                                final isSelected = (index == widget.currentIndex);
-                                return Expanded(
-                                  child: _TabSlotWidget(
-                                    item: item,
-                                    isSelected: isSelected,
-                                    accentColor: widget.accentColor,
-                                    inactiveColor: widget.inactiveColor,
-                                    onTap: () {
-                                      _snapToTab(index, animated: true);
-                                      widget.onChanged(index);
-                                      HapticFeedback.selectionClick();
-                                    },
-                                  ),
-                                );
-                              }),
+                            key: _inactiveContentKey,
+                            child: _buildTabRow(
+                              color: widget.inactiveColor,
+                              isActiveLayer: false,
+                              selectedIndex: widget.currentIndex,
+                              selectedColor: widget.accentColor,
                             ),
                           ),
+
+                          // 4. Off-screen Active (accent) tab row for shader capture only.
+                          //    Hidden behind Offstage but still laid out for rasterization.
+                          Positioned(
+                            left: 0, right: 0, top: 0, bottom: 0,
+                            child: Offstage(
+                              offstage: false,
+                              child: Opacity(
+                                opacity: 0.0001,
+                                child: RepaintBoundary(
+                                  key: _activeContentKey,
+                                  child: _buildTabRow(
+                                    color: widget.accentColor,
+                                    isActiveLayer: true,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // 5. Lens Shader Overlay — Only active during press/drag.
+                          //    Strictly replaces content INSIDE the lens capsule only:
+                          //    inside: magnified + refracted Layer B (accent); outside: transparent (shows Layer A through).
                           AnimatedBuilder(
                             animation: Listenable.merge([
                               _pressController,
@@ -420,28 +561,53 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                                 lensHalfSize.width * scale,
                                 lensHalfSize.height * scale,
                               );
-                              final center = Offset(_lensCenterX, widget.height / 2);
+                              final center = Offset(currentPillX, widget.height / 2);
 
                               return Positioned.fill(
                                 child: IgnorePointer(
-                                  child: _LiquidGlassShaderView(
+                                  child: _LensOnlyOverlay(
                                     program: _cachedGlassProgram,
-                                    contentImage: _capturedContentImage,
+                                    inactiveImage: _capturedInactiveImage,
+                                    activeImage: _capturedActiveImage,
                                     lensCenter: center,
                                     lensHalfSize: scaledHalfSize,
                                     cornerRadius: scaledHalfSize.height,
                                     magnification: widget.lensMagnification,
                                     refraction: widget.lensRefraction,
                                     chromaticAberration: widget.chromaticAberration,
-                                    accentColor: widget.accentColor,
-                                    barTint: widget.barColor,
                                     pressProgress: press,
                                     touchDotPos: _touchDotPos,
-                                    fallback: widget.forceFallback || _cachedGlassProgram == null,
+                                    forceFallback: widget.forceFallback,
                                   ),
                                 ),
                               );
                             },
+                          ),
+
+                          // 6. Semantic + Tap Gesture Overlay
+                          Positioned.fill(
+                            child: Row(
+                              children: List.generate(widget.items.length, (index) {
+                                final item = widget.items[index];
+                                final isSelected = (index == widget.currentIndex);
+
+                                return Expanded(
+                                  child: Semantics(
+                                    selected: isSelected,
+                                    label: item.label,
+                                    button: true,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onTap: () {
+                                        _snapToTab(index, animated: true);
+                                        widget.onChanged(index);
+                                        HapticFeedback.selectionClick();
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
                           ),
                         ],
                       ),
@@ -457,7 +623,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                 height: 4.5,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2.5),
-                  color: Colors.white.withValues(alpha: 0.35),
+                  color: Colors.white.withValues(alpha: 0.24),
                 ),
               ),
             ],
@@ -468,139 +634,64 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   }
 }
 
-class _TabSlotWidget extends StatelessWidget {
-  const _TabSlotWidget({
-    required this.item,
-    required this.isSelected,
-    required this.accentColor,
-    required this.inactiveColor,
-    required this.onTap,
-  });
-
-  final LiquidGlassTabItem item;
-  final bool isSelected;
-  final Color accentColor;
-  final Color inactiveColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isSelected ? accentColor : inactiveColor;
-    final iconData = (isSelected && item.selectedIcon != null)
-        ? item.selectedIcon!
-        : item.icon;
-
-    return Semantics(
-      selected: isSelected,
-      label: item.label,
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(iconData, color: color, size: 24),
-                if (item.badgeValue != null && item.badgeValue!.isNotEmpty)
-                  Positioned(
-                    right: -8,
-                    top: -4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: Colors.redAccent,
-                      ),
-                      child: Text(
-                        item.badgeValue!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              item.label,
-              maxLines: 1,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LiquidGlassShaderView extends StatelessWidget {
-  const _LiquidGlassShaderView({
+class _LensOnlyOverlay extends StatelessWidget {
+  const _LensOnlyOverlay({
     required this.program,
-    required this.contentImage,
+    required this.inactiveImage,
+    required this.activeImage,
     required this.lensCenter,
     required this.lensHalfSize,
     required this.cornerRadius,
     required this.magnification,
     required this.refraction,
     required this.chromaticAberration,
-    required this.accentColor,
-    required this.barTint,
     required this.pressProgress,
     required this.touchDotPos,
-    required this.fallback,
+    required this.forceFallback,
   });
 
   final ui.FragmentProgram? program;
-  final ui.Image? contentImage;
+  final ui.Image? inactiveImage;
+  final ui.Image? activeImage;
   final Offset lensCenter;
   final Size lensHalfSize;
   final double cornerRadius;
   final double magnification;
   final double refraction;
   final double chromaticAberration;
-  final Color accentColor;
-  final Color barTint;
   final double pressProgress;
   final Offset touchDotPos;
-  final bool fallback;
+  final bool forceFallback;
 
   @override
   Widget build(BuildContext context) {
-    if (fallback || program == null || contentImage == null) {
+    // Use shader when available; otherwise strict clip-based canvas fallback.
+    if (!forceFallback && program != null && inactiveImage != null && activeImage != null) {
       return CustomPaint(
-        painter: _FallbackGlassPainter(
+        painter: _DualShaderGlassPainter(
+          program: program!,
+          inactiveImage: inactiveImage!,
+          activeImage: activeImage!,
           lensCenter: lensCenter,
           lensHalfSize: lensHalfSize,
           cornerRadius: cornerRadius,
-          accentColor: accentColor,
+          magnification: magnification,
+          refraction: refraction,
+          chromaticAberration: chromaticAberration,
           pressProgress: pressProgress,
           touchDotPos: touchDotPos,
         ),
       );
     }
 
+    // Fallback: clip-based canvas overlay drawing only inside the lens capsule.
     return CustomPaint(
-      painter: _ShaderGlassPainter(
-        program: program!,
-        contentImage: contentImage!,
+      painter: _StrictFallbackGlassPainter(
+        activeImage: activeImage,
         lensCenter: lensCenter,
         lensHalfSize: lensHalfSize,
         cornerRadius: cornerRadius,
         magnification: magnification,
-        refraction: refraction,
-        chromaticAberration: chromaticAberration,
-        accentColor: accentColor,
-        barTint: barTint,
         pressProgress: pressProgress,
         touchDotPos: touchDotPos,
       ),
@@ -608,32 +699,30 @@ class _LiquidGlassShaderView extends StatelessWidget {
   }
 }
 
-class _ShaderGlassPainter extends CustomPainter {
-  _ShaderGlassPainter({
+class _DualShaderGlassPainter extends CustomPainter {
+  _DualShaderGlassPainter({
     required this.program,
-    required this.contentImage,
+    required this.inactiveImage,
+    required this.activeImage,
     required this.lensCenter,
     required this.lensHalfSize,
     required this.cornerRadius,
     required this.magnification,
     required this.refraction,
     required this.chromaticAberration,
-    required this.accentColor,
-    required this.barTint,
     required this.pressProgress,
     required this.touchDotPos,
   });
 
   final ui.FragmentProgram program;
-  final ui.Image contentImage;
+  final ui.Image inactiveImage;
+  final ui.Image activeImage;
   final Offset lensCenter;
   final Size lensHalfSize;
   final double cornerRadius;
   final double magnification;
   final double refraction;
   final double chromaticAberration;
-  final Color accentColor;
-  final Color barTint;
   final double pressProgress;
   final Offset touchDotPos;
 
@@ -651,80 +740,88 @@ class _ShaderGlassPainter extends CustomPainter {
     shader.setFloat(7, magnification);
     shader.setFloat(8, refraction);
     shader.setFloat(9, chromaticAberration);
-    shader.setFloat(10, 1.5);
-    shader.setFloat(11, 0.75);
-    shader.setFloat(12, accentColor.r);
-    shader.setFloat(13, accentColor.g);
-    shader.setFloat(14, accentColor.b);
-    shader.setFloat(15, accentColor.a);
-    shader.setFloat(16, barTint.r);
-    shader.setFloat(17, barTint.g);
-    shader.setFloat(18, barTint.b);
-    shader.setFloat(19, barTint.a);
-    shader.setFloat(20, pressProgress);
-    shader.setFloat(21, touchDotPos.dx);
-    shader.setFloat(22, touchDotPos.dy);
-    shader.setFloat(23, 14.0);
+    shader.setFloat(10, 1.5); // Highlight width
+    shader.setFloat(11, 0.75); // Highlight intensity
+    shader.setFloat(12, pressProgress);
+    shader.setFloat(13, touchDotPos.dx);
+    shader.setFloat(14, touchDotPos.dy);
+    shader.setFloat(15, 14.0); // Touch dot radius
 
-    shader.setImageSampler(0, contentImage);
+    shader.setImageSampler(0, inactiveImage);
+    shader.setImageSampler(1, activeImage);
 
     final paint = Paint()..shader = shader;
     canvas.drawRect(Offset.zero & size, paint);
   }
 
   @override
-  bool shouldRepaint(covariant _ShaderGlassPainter old) {
+  bool shouldRepaint(covariant _DualShaderGlassPainter old) {
     return old.lensCenter != lensCenter ||
         old.lensHalfSize != lensHalfSize ||
         old.pressProgress != pressProgress ||
         old.touchDotPos != touchDotPos ||
-        old.contentImage != contentImage;
+        old.inactiveImage != inactiveImage ||
+        old.activeImage != activeImage;
   }
 }
 
-class _FallbackGlassPainter extends CustomPainter {
-  _FallbackGlassPainter({
+class _StrictFallbackGlassPainter extends CustomPainter {
+  _StrictFallbackGlassPainter({
+    required this.activeImage,
     required this.lensCenter,
     required this.lensHalfSize,
     required this.cornerRadius,
-    required this.accentColor,
+    required this.magnification,
     required this.pressProgress,
     required this.touchDotPos,
   });
 
+  final ui.Image? activeImage;
   final Offset lensCenter;
   final Size lensHalfSize;
   final double cornerRadius;
-  final Color accentColor;
+  final double magnification;
   final double pressProgress;
   final Offset touchDotPos;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromCenter(
+    final lensRect = Rect.fromCenter(
       center: lensCenter,
       width: lensHalfSize.width * 2,
       height: lensHalfSize.height * 2,
     );
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
+    final lensRRect = RRect.fromRectAndRadius(lensRect, Radius.circular(cornerRadius));
 
+    // Draw Active Layer B strictly inside the lens capsule with magnification.
+    // The visible inactive row (behind this overlay) handles everything outside.
+    if (activeImage != null) {
+      canvas.save();
+      canvas.clipRRect(lensRRect);
+
+      canvas.translate(lensCenter.dx, lensCenter.dy);
+      final scale = 1.0 + (magnification - 1.0) * pressProgress;
+      canvas.scale(scale, scale);
+      canvas.translate(-lensCenter.dx, -lensCenter.dy);
+
+      final src = Rect.fromLTWH(0, 0, activeImage!.width.toDouble(), activeImage!.height.toDouble());
+      canvas.drawImageRect(activeImage!, src, Offset.zero & size, Paint());
+      canvas.restore();
+    }
+
+    // Rim highlight & touch dot
     final strokePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..shader = ui.Gradient.linear(
-        Offset(rect.center.dx, rect.top),
-        Offset(rect.center.dx, rect.bottom),
+        Offset(lensRect.center.dx, lensRect.top),
+        Offset(lensRect.center.dx, lensRect.bottom),
         [
-          Colors.white.withValues(alpha: 0.8 * pressProgress),
-          Colors.white.withValues(alpha: 0.2 * pressProgress),
+          Colors.white.withValues(alpha: 0.85 * pressProgress),
+          Colors.white.withValues(alpha: 0.25 * pressProgress),
         ],
       );
-    canvas.drawRRect(rrect, strokePaint);
-
-    final tintPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = Colors.white.withValues(alpha: 0.14 * pressProgress);
-    canvas.drawRRect(rrect, tintPaint);
+    canvas.drawRRect(lensRRect, strokePaint);
 
     if (touchDotPos != Offset.zero) {
       final dotPaint = Paint()
@@ -735,10 +832,11 @@ class _FallbackGlassPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _FallbackGlassPainter old) {
+  bool shouldRepaint(covariant _StrictFallbackGlassPainter old) {
     return old.lensCenter != lensCenter ||
         old.lensHalfSize != lensHalfSize ||
         old.pressProgress != pressProgress ||
-        old.touchDotPos != touchDotPos;
+        old.touchDotPos != touchDotPos ||
+        old.activeImage != activeImage;
   }
 }
