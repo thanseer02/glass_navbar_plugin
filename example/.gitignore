@@ -44,5 +44,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Flutter Demon user preferences (not tracked)
-.fdemon/settings.local.toml
+# Widget Preview related
+.widget_preview/
+
+# FVM Version Cache
+.fvm/

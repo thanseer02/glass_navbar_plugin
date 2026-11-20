@@ -1,7 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.tnitish.native_glass_navbar_example">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="native_glass_navbar_example"
+        android:label="glass_nav_dummy"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

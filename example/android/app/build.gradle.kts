@@ -1,26 +1,30 @@
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android plugin.
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-configure<com.android.build.api.dsl.ApplicationExtension> {
-    namespace = "com.tnitish.native_glass_navbar_example"
+android {
+    namespace = "com.example.glass_nav_dummy"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.tnitish.native_glass_navbar_example"
+        applicationId = "com.example.glass_nav_dummy"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
+        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
+        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
+        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
+        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -36,7 +40,7 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
